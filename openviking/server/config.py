@@ -22,6 +22,20 @@ logger = get_logger(__name__)
 
 
 @dataclass
+class PrometheusConfig:
+    """Prometheus exporter configuration."""
+
+    enabled: bool = False
+
+
+@dataclass
+class TelemetryConfig:
+    """Telemetry configuration."""
+
+    prometheus: PrometheusConfig = field(default_factory=PrometheusConfig)
+
+
+@dataclass
 class ServerConfig:
     """Server configuration (from the ``server`` section of ov.conf)."""
 
@@ -33,6 +47,7 @@ class ServerConfig:
     with_bot: bool = False  # Enable Bot API proxy to Vikingbot
     bot_api_url: str = "http://localhost:18790"  # Vikingbot OpenAPIChannel URL (default port)
     encryption_enabled: bool = False  # Whether API key hashing is enabled
+    telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
 
 
 def load_server_config(config_path: Optional[str] = None) -> ServerConfig:
@@ -68,6 +83,8 @@ def load_server_config(config_path: Optional[str] = None) -> ServerConfig:
 
     data = load_json_config(path)
     server_data = data.get("server", {})
+    telemetry_data = server_data.get("telemetry", {}) or {}
+    prometheus_data = telemetry_data.get("prometheus", {}) or {}
 
     # Get encryption enabled from config data directly (for test compatibility)
     encryption_enabled = data.get("encryption", {}).get("enabled", False)
@@ -79,6 +96,11 @@ def load_server_config(config_path: Optional[str] = None) -> ServerConfig:
         root_api_key=server_data.get("root_api_key"),
         cors_origins=server_data.get("cors_origins", ["*"]),
         encryption_enabled=encryption_enabled,
+        telemetry=TelemetryConfig(
+            prometheus=PrometheusConfig(
+                enabled=prometheus_data.get("enabled", False),
+            )
+        ),
     )
 
     return config
