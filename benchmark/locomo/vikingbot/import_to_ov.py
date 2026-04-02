@@ -4,11 +4,18 @@ OpenViking data import tool.
 Import conversations from LoCoMo JSON or plain text files into OpenViking memory.
 
 Usage:
-    # Import LoCoMo JSON conversations
+    # Import LoCoMo JSON conversations (all messages in a session together)
     uv run python import_to_ov.py locomo10.json --sample 0 --sessions 1-4
+
+    # Import each message as a separate session
+    uv run python import_to_ov.py locomo10.json --sample 0 --sessions 1-4 --single-message
 
     # Import plain text conversations
     uv run python import_to_ov.py example.txt
+
+    # Calculate token summary from import_success.csv
+    uv run python import_to_ov.py --calc-tokens
+    uv run python import_to_ov.py --calc-tokens --success-csv ./result/import_success.csv
 """
 
 import argparse
@@ -137,7 +144,10 @@ def load_success_csv(csv_path: str = "./result/import_success.csv") -> set:
         with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                key = f"viking:{row['sample_id']}:{row['session']}"
+                if 'message_index' in row:
+                    key = f"viking:{row['sample_id']}:{row['session']}:{row['message_index']}"
+                else:
+                    key = f"viking:{row['sample_id']}:{row['session']}"
                 success_keys.add(key)
     return success_keys
 
@@ -145,7 +155,7 @@ def load_success_csv(csv_path: str = "./result/import_success.csv") -> set:
 def write_success_record(record: Dict[str, Any], csv_path: str = "./result/import_success.csv") -> None:
     """写入成功记录到CSV文件"""
     file_exists = Path(csv_path).exists()
-    fieldnames = ["timestamp", "sample_id", "session", "date_time", "speakers",
+    fieldnames = ["timestamp", "sample_id", "session", "message_index", "date_time", "speakers",
                  "embedding_tokens", "vlm_tokens", "llm_input_tokens",
                  "llm_output_tokens", "total_tokens"]
 
@@ -158,6 +168,7 @@ def write_success_record(record: Dict[str, Any], csv_path: str = "./result/impor
             "timestamp": record["timestamp"],
             "sample_id": record["sample_id"],
             "session": record["session"],
+            "message_index": record.get("message_index", ""),
             "date_time": record.get("meta", {}).get("date_time", ""),
             "speakers": record.get("meta", {}).get("speakers", ""),
             "embedding_tokens": record["token_usage"].get("embedding", 0),
@@ -174,8 +185,12 @@ def write_error_record(record: Dict[str, Any], error_path: str = "./result/impor
         timestamp = record["timestamp"]
         sample_id = record["sample_id"]
         session = record["session"]
+        if "message_index" in record:
+            identifier = f"{sample_id}/{session}/msg{record['message_index']}"
+        else:
+            identifier = f"{sample_id}/{session}"
         error = record["error"]
-        f.write(f"[{timestamp}] ERROR [{sample_id}/{session}]: {error}\n")
+        f.write(f"[{timestamp}] ERROR [{identifier}]: {error}\n")
 
 
 def load_ingest_record(record_path: str = "./result/.ingest_record.json") -> Dict[str, Any]:
@@ -198,9 +213,13 @@ def is_already_ingested(
     session_key: str,
     record: Dict[str, Any],
     success_keys: Optional[set] = None,
+    message_index: Optional[int] = None,
 ) -> bool:
-    """Check if a specific session has already been successfully ingested."""
-    key = f"viking:{sample_id}:{session_key}"
+    """Check if a specific session or message has already been successfully ingested."""
+    if message_index is not None:
+        key = f"viking:{sample_id}:{session_key}:{message_index}"
+    else:
+        key = f"viking:{sample_id}:{session_key}"
     if success_keys is not None and key in success_keys:
         return True
     return key in record and record[key].get("success", False)
@@ -211,9 +230,13 @@ def mark_ingested(
     session_key: str,
     record: Dict[str, Any],
     meta: Optional[Dict[str, Any]] = None,
+    message_index: Optional[int] = None,
 ) -> None:
-    """Mark a session as successfully ingested."""
-    key = f"viking:{sample_id}:{session_key}"
+    """Mark a session or message as successfully ingested."""
+    if message_index is not None:
+        key = f"viking:{sample_id}:{session_key}:{message_index}"
+    else:
+        key = f"viking:{sample_id}:{session_key}"
     record[key] = {
         "success": True,
         "timestamp": int(time.time()),
@@ -301,6 +324,70 @@ async def viking_ingest(
             await client.close()
 
 
+async def viking_ingest_single_message(
+    message: Dict[str, Any],
+    openviking_url: str,
+    semaphore: asyncio.Semaphore,
+    session_time: Optional[str] = None,
+    message_index: Optional[int] = None,
+) -> Dict[str, int]:
+    """Save a single message to OpenViking via OpenViking SDK client.
+    Each message becomes its own session.
+    Returns token usage dict with embedding and vlm token counts.
+
+    Args:
+        message: Single message dict with role and text
+        openviking_url: OpenViking service URL
+        semaphore: Async semaphore for concurrency control
+        session_time: Session time string (e.g., "9:36 am on 2 April, 2023")
+        message_index: Index of the message in the original session
+    """
+    # 解析 session_time
+    msg_created_at = None
+    if session_time:
+        try:
+            base_datetime = datetime.strptime(session_time, "%I:%M %p on %d %B, %Y")
+            if message_index is not None:
+                # 使用message_index计算时间偏移
+                msg_dt = base_datetime + timedelta(seconds=message_index)
+                msg_created_at = msg_dt.isoformat()
+        except ValueError:
+            print(f"Warning: Failed to parse session_time: {session_time}", file=sys.stderr)
+
+    # 使用信号量控制并发
+    async with semaphore:
+        # Create client
+        client = ov.AsyncHTTPClient(url=openviking_url)
+        await client.initialize()
+
+        try:
+            # Create session
+            create_res = await client.create_session()
+            session_id = create_res["session_id"]
+
+            # Add single message
+            await client.add_message(
+                session_id=session_id,
+                role=message["role"],
+                parts=[{"type": "text", "text": message["text"]}],
+                created_at=msg_created_at
+            )
+
+            # Commit
+            result = await client.commit_session(session_id, telemetry=True)
+
+            if result.get("status") != "committed":
+                raise RuntimeError(f"Commit failed: {result}")
+
+            # 直接从commit结果中提取token使用情况
+            token_usage = _parse_token_usage(result)
+
+            return token_usage
+
+        finally:
+            await client.close()
+
+
 def sync_viking_ingest(messages: List[Dict[str, Any]], openviking_url: str, session_time: Optional[str] = None) -> Dict[str, int]:
     """Synchronous wrapper for viking_ingest to maintain existing API."""
     semaphore = asyncio.Semaphore(1)  # 同步调用时使用信号量为1
@@ -318,6 +405,71 @@ def parse_session_range(s: str) -> Tuple[int, int]:
         return int(lo), int(hi)
     n = int(s)
     return n, n
+
+
+async def process_single_message(
+    message: Dict[str, Any],
+    message_index: int,
+    sample_id: str | int,
+    session_key: str,
+    meta: Dict[str, Any],
+    run_time: str,
+    ingest_record: Dict[str, Any],
+    args: argparse.Namespace,
+    semaphore: asyncio.Semaphore
+) -> Dict[str, Any]:
+    """处理单条消息的导入任务"""
+    try:
+        token_usage = await viking_ingest_single_message(
+            message, args.openviking_url, semaphore, meta.get("date_time"), message_index
+        )
+        print(f"    -> [SUCCESS] [{sample_id}/{session_key}/msg{message_index}] imported to OpenViking", file=sys.stderr)
+
+        # Extract token counts
+        embedding_tokens = token_usage.get("embedding", 0)
+        vlm_tokens = token_usage.get("vlm", 0)
+        print(f"    -> [USAGE] [{sample_id}/{session_key}/msg{message_index}] Embedding tokens: {embedding_tokens}, VLM tokens: {vlm_tokens}", file=sys.stderr)
+
+        # Write success record
+        result = {
+            "timestamp": run_time,
+            "sample_id": sample_id,
+            "session": session_key,
+            "message_index": message_index,
+            "status": "success",
+            "meta": meta,
+            "token_usage": token_usage,
+            "embedding_tokens": embedding_tokens,
+            "vlm_tokens": vlm_tokens
+        }
+
+        # 写入成功CSV
+        write_success_record(result, args.success_csv)
+
+        # Mark as successfully ingested
+        mark_ingested(sample_id, session_key, ingest_record, meta, message_index)
+        save_ingest_record(ingest_record)  # Save immediately after success
+
+        return result
+
+    except Exception as e:
+        print(f"    -> [ERROR] [{sample_id}/{session_key}/msg{message_index}] {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+
+        # Write error record
+        result = {
+            "timestamp": run_time,
+            "sample_id": sample_id,
+            "session": session_key,
+            "message_index": message_index,
+            "status": "error",
+            "error": str(e)
+        }
+
+        # 写入错误日志
+        write_error_record(result, args.error_log)
+
+        return result
 
 
 async def process_single_session(
@@ -410,6 +562,9 @@ async def run_import(args: argparse.Namespace) -> None:
     total_vlm_tokens = 0
     tasks: List[asyncio.Task] = []
 
+    import_mode = "single-message" if args.single_message else "session"
+    print(f"[INFO] Import mode: {import_mode}", file=sys.stderr)
+
     if args.input.endswith(".json"):
         # LoCoMo JSON format
         samples = load_locomo_data(args.input, args.sample)
@@ -427,30 +582,60 @@ async def run_import(args: argparse.Namespace) -> None:
                 session_key = meta["session_key"]
                 label = f"{session_key} ({meta['date_time']})"
 
-                # Skip already ingested sessions unless force-ingest is enabled
-                if not args.force_ingest and is_already_ingested(sample_id, session_key, ingest_record, success_keys):
-                    print(f"  [{label}] [SKIP] already imported (use --force-ingest to reprocess)", file=sys.stderr)
-                    skipped_count += 1
-                    continue
+                if args.single_message:
+                    # 单条消息导入模式
+                    for msg_idx, msg in enumerate(messages):
+                        # Skip already ingested messages unless force-ingest is enabled
+                        if not args.force_ingest and is_already_ingested(sample_id, session_key, ingest_record, success_keys, msg_idx):
+                            print(f"  [{label}/msg{msg_idx}] [SKIP] already imported (use --force-ingest to reprocess)", file=sys.stderr)
+                            skipped_count += 1
+                            continue
 
-                # Preview messages
-                preview = " | ".join([f"{msg['role']}: {msg['text'][:30]}..." for msg in messages[:3]])
-                print(f"  [{label}] {preview}", file=sys.stderr)
+                        # Preview message
+                        preview = f"{msg['role']}: {msg['text'][:50]}..."
+                        print(f"  [{label}/msg{msg_idx}] {preview}", file=sys.stderr)
 
-                # 创建异步任务
-                task = asyncio.create_task(
-                    process_single_session(
-                        messages=messages,
-                        sample_id=sample_id,
-                        session_key=session_key,
-                        meta=meta,
-                        run_time=run_time,
-                        ingest_record=ingest_record,
-                        args=args,
-                        semaphore=semaphore
+                        # 创建异步任务
+                        task = asyncio.create_task(
+                            process_single_message(
+                                message=msg,
+                                message_index=msg_idx,
+                                sample_id=sample_id,
+                                session_key=session_key,
+                                meta=meta,
+                                run_time=run_time,
+                                ingest_record=ingest_record,
+                                args=args,
+                                semaphore=semaphore
+                            )
+                        )
+                        tasks.append(task)
+                else:
+                    # 完整session导入模式
+                    # Skip already ingested sessions unless force-ingest is enabled
+                    if not args.force_ingest and is_already_ingested(sample_id, session_key, ingest_record, success_keys):
+                        print(f"  [{label}] [SKIP] already imported (use --force-ingest to reprocess)", file=sys.stderr)
+                        skipped_count += 1
+                        continue
+
+                    # Preview messages
+                    preview = " | ".join([f"{msg['role']}: {msg['text'][:30]}..." for msg in messages[:3]])
+                    print(f"  [{label}] {preview}", file=sys.stderr)
+
+                    # 创建异步任务
+                    task = asyncio.create_task(
+                        process_single_session(
+                            messages=messages,
+                            sample_id=sample_id,
+                            session_key=session_key,
+                            meta=meta,
+                            run_time=run_time,
+                            ingest_record=ingest_record,
+                            args=args,
+                            semaphore=semaphore
+                        )
                     )
-                )
-                tasks.append(task)
+                    tasks.append(task)
 
     else:
         # Plain text format
@@ -460,12 +645,6 @@ async def run_import(args: argparse.Namespace) -> None:
         for idx, session in enumerate(sessions, start=1):
             session_key = f"txt-session-{idx}"
             print(f"\n=== Text Session {idx} ===", file=sys.stderr)
-
-            # Skip already ingested sessions unless force-ingest is enabled
-            if not args.force_ingest and is_already_ingested("txt", session_key, ingest_record, success_keys):
-                print(f"  [SKIP] already imported (use --force-ingest to reprocess)", file=sys.stderr)
-                skipped_count += 1
-                continue
 
             # For plain text, all messages as user role
             messages = []
@@ -477,23 +656,60 @@ async def run_import(args: argparse.Namespace) -> None:
                     "index": i
                 })
 
-            preview = " | ".join([f"{msg['role']}: {msg['text'][:30]}..." for msg in messages[:3]])
-            print(f"  {preview}", file=sys.stderr)
+            if args.single_message:
+                # 单条消息导入模式
+                for msg_idx, msg in enumerate(messages):
+                    # Skip already ingested messages unless force-ingest is enabled
+                    if not args.force_ingest and is_already_ingested("txt", session_key, ingest_record, success_keys, msg_idx):
+                        print(f"  [msg{msg_idx}] [SKIP] already imported (use --force-ingest to reprocess)", file=sys.stderr)
+                        skipped_count += 1
+                        continue
 
-            # 创建异步任务
-            task = asyncio.create_task(
-                process_single_session(
-                    messages=messages,
-                    sample_id="txt",
-                    session_key=session_key,
-                    meta={"session_index": idx},
-                    run_time=run_time,
-                    ingest_record=ingest_record,
-                    args=args,
-                    semaphore=semaphore
+                    # Preview message
+                    preview = f"{msg['role']}: {msg['text'][:50]}..."
+                    print(f"  [msg{msg_idx}] {preview}", file=sys.stderr)
+
+                    # 创建异步任务
+                    task = asyncio.create_task(
+                        process_single_message(
+                            message=msg,
+                            message_index=msg_idx,
+                            sample_id="txt",
+                            session_key=session_key,
+                            meta={"session_index": idx},
+                            run_time=run_time,
+                            ingest_record=ingest_record,
+                            args=args,
+                            semaphore=semaphore
+                        )
+                    )
+                    tasks.append(task)
+            else:
+                # 完整session导入模式
+                # Skip already ingested sessions unless force-ingest is enabled
+                if not args.force_ingest and is_already_ingested("txt", session_key, ingest_record, success_keys):
+                    print(f"  [SKIP] already imported (use --force-ingest to reprocess)", file=sys.stderr)
+                    skipped_count += 1
+                    continue
+
+                # Preview messages
+                preview = " | ".join([f"{msg['role']}: {msg['text'][:30]}..." for msg in messages[:3]])
+                print(f"  {preview}", file=sys.stderr)
+
+                # 创建异步任务
+                task = asyncio.create_task(
+                    process_single_session(
+                        messages=messages,
+                        sample_id="txt",
+                        session_key=session_key,
+                        meta={"session_index": idx},
+                        run_time=run_time,
+                        ingest_record=ingest_record,
+                        args=args,
+                        semaphore=semaphore
+                    )
                 )
-            )
-            tasks.append(task)
+                tasks.append(task)
 
     # 等待所有任务完成
     print(f"\n[INFO] Starting import with {args.parallel} concurrent workers, {len(tasks)} tasks to process", file=sys.stderr)
@@ -536,6 +752,38 @@ async def run_import(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+def calculate_token_summary(csv_path: str = "./result/import_success.csv") -> Dict[str, Any]:
+    """计算 import_success.csv 中的 token 总和统计"""
+    if not Path(csv_path).exists():
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+    total_records = 0
+    total_embedding = 0
+    total_vlm = 0
+    total_llm_input = 0
+    total_llm_output = 0
+    total_total = 0
+
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            total_records += 1
+            total_embedding += int(row.get("embedding_tokens", 0))
+            total_vlm += int(row.get("vlm_tokens", 0))
+            total_llm_input += int(row.get("llm_input_tokens", 0))
+            total_llm_output += int(row.get("llm_output_tokens", 0))
+            total_total += int(row.get("total_tokens", 0))
+
+    return {
+        "total_records": total_records,
+        "embedding_tokens": total_embedding,
+        "vlm_tokens": total_vlm,
+        "llm_input_tokens": total_llm_input,
+        "llm_output_tokens": total_llm_output,
+        "total_tokens": total_total,
+    }
+
 
 def main():
     parser = argparse.ArgumentParser(description="Import conversations into OpenViking")
@@ -588,7 +836,36 @@ def main():
         default=False,
         help="Clear all existing ingest records before running",
     )
+    parser.add_argument(
+        "--single-message",
+        action="store_true",
+        default=False,
+        help="Import each message as a separate session (default: import all messages in a session together)",
+    )
+    parser.add_argument(
+        "--calc-tokens",
+        action="store_true",
+        default=False,
+        help="Calculate token summary from import_success.csv and exit (no import)",
+    )
     args = parser.parse_args()
+
+    # 如果是计算 token 模式，直接执行并退出
+    if args.calc_tokens:
+        try:
+            summary = calculate_token_summary(args.success_csv)
+            print("\n=== Token Summary ===")
+            print(f"Total records: {summary['total_records']}")
+            print(f"Embedding tokens: {summary['embedding_tokens']}")
+            print(f"VLM tokens: {summary['vlm_tokens']}")
+            print(f"LLM input tokens: {summary['llm_input_tokens']}")
+            print(f"LLM output tokens: {summary['llm_output_tokens']}")
+            print(f"Total tokens: {summary['total_tokens']}")
+            print()
+            return
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # 确保输出目录存在
     Path(args.success_csv).parent.mkdir(parents=True, exist_ok=True)
