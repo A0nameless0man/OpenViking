@@ -327,7 +327,7 @@ class MemoryUpdater:
         tracer.info(f"Memory operations applied: {result.summary()}")
 
         # Generate overview files if overview_template is configured
-        for schema in registry.list_all():
+        for schema in resolved_registry.list_all():
             if schema.overview_template and schema.directory:
                 # Render directory path
                 env = jinja2.Environment(autoescape=False)
