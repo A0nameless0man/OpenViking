@@ -243,7 +243,6 @@ class MemoryUpdater:
         self,
         operations: Any,
         ctx: RequestContext,
-        registry: Optional[MemoryTypeRegistry] = None,
         extract_context: Any = None,
     ) -> MemoryUpdateResult:
         """
@@ -254,7 +253,7 @@ class MemoryUpdater:
         Args:
             operations: StructuredMemoryOperations from LLM with per-memory_type fields (e.g., soul, identity)
             ctx: Request context
-            registry: Optional MemoryTypeRegistry for URI resolution
+            extract_context: Optional context for template rendering
 
         Returns:
             MemoryUpdateResult with changes made
@@ -266,9 +265,7 @@ class MemoryUpdater:
             logger.warning("VikingFS not available, skipping memory operations")
             return result
 
-        # Use provided registry or internal registry
-        resolved_registry = registry or self._registry
-        if not resolved_registry:
+        if not self._registry:
             raise ValueError("MemoryTypeRegistry is required for URI resolution")
 
         # Get actual user/agent space from ctx
@@ -278,7 +275,7 @@ class MemoryUpdater:
         # Resolve all URIs first (pass extract_context for template rendering)
         resolved_ops = resolve_all_operations(
             operations,
-            resolved_registry,
+            self._registry,
             user_space=user_space,
             agent_space=agent_space,
             extract_context=extract_context,
@@ -337,7 +334,7 @@ class MemoryUpdater:
                 if "/" in uri:
                     dir_path = "/".join(uri.split("/")[:-1])
                     # Find which memory type this directory belongs to
-                    for schema in resolved_registry.list_all():
+                    for schema in self._registry.list_all():
                         if schema.overview_template and schema.directory:
                             env = jinja2.Environment(autoescape=False)
                             base_dir = env.from_string(schema.directory).render(
@@ -568,13 +565,13 @@ class MemoryUpdater:
         """
         from openviking.session.memory.utils.messages import parse_memory_file_with_fields
 
-        logger.info(f"[generate_overview] Called with memory_type={memory_type}, directory={directory}")
+        tracer.info(f"[generate_overview] Called with memory_type={memory_type}, directory={directory}")
 
         # Get the schema for this memory type
         registry = self._registry
-        logger.info(f"[generate_overview] registry={registry}")
+        tracer.info(f"[generate_overview] registry={registry}")
         schema = registry.get(memory_type)
-        logger.info(f"[generate_overview] schema={schema}, overview_template={schema.overview_template if schema else None}")
+        tracer.info(f"[generate_overview] schema={schema}, overview_template={schema.overview_template if schema else None}")
         if not schema or not schema.overview_template:
             logger.debug(f"No overview_template for memory type: {memory_type}")
             return
@@ -585,7 +582,7 @@ class MemoryUpdater:
         try:
             # Use ls to list direct children
             entries = await viking_fs.ls(directory, show_all_hidden=True, ctx=ctx)
-            logger.info(f"[generate_overview] LS entries in {directory}: {entries}")
+            tracer.info(f"[generate_overview] LS entries in {directory}: {entries}")
 
             # Extract file paths from ls entries
             md_files = []
@@ -595,7 +592,7 @@ class MemoryUpdater:
                 if name.endswith(".md") and not name.endswith(".overview.md") and not name.endswith(".abstract.md"):
                     md_files.append(f"{base_uri}/{name}")
 
-            logger.info(f"[generate_overview] Filtered md_files: {md_files}")
+            tracer.info(f"[generate_overview] Filtered md_files: {md_files}")
         except Exception as e:
             logger.warning(f"Failed to list files in {directory}: {e}")
             return
@@ -605,13 +602,13 @@ class MemoryUpdater:
             overview_path = f"{directory.rstrip('/')}/.overview.md"
             try:
                 await viking_fs.delete_file(overview_path, ctx=ctx)
-                logger.info(f"[generate_overview] Removed orphaned overview: {overview_path}")
+                tracer.info(f"[generate_overview] Removed orphaned overview: {overview_path}")
             except Exception:
                 pass
             # Try to delete empty directory
             try:
                 await viking_fs.delete_file(directory, ctx=ctx)
-                logger.info(f"[generate_overview] Removed empty directory: {directory}")
+                tracer.info(f"[generate_overview] Removed empty directory: {directory}")
             except Exception:
                 pass
             return
@@ -622,7 +619,7 @@ class MemoryUpdater:
             try:
                 content = await viking_fs.read_file(file_path, ctx=ctx)
                 parsed = parse_memory_file_with_fields(content)
-                logger.info(f"[generate_overview] Parsed {file_path}: {parsed.keys() if parsed else None}")
+                tracer.info(f"[generate_overview] Parsed {file_path}: {parsed.keys() if parsed else None}")
 
                 # Extract filename from path
                 filename = file_path.split("/")[-1]
@@ -635,7 +632,7 @@ class MemoryUpdater:
                 logger.warning(f"Failed to parse {file_path}: {e}")
                 continue
 
-        logger.info(f"[generate_overview] Total items: {len(items)}")
+        tracer.info(f"[generate_overview] Total items: {len(items)}")
         if not items:
             logger.debug(f"No valid memory files parsed in {directory}")
             return
@@ -649,7 +646,7 @@ class MemoryUpdater:
                 items=items,
                 extract_context=extract_context,
             )
-            logger.info(f"[generate_overview] Rendered overview length: {len(rendered)}")
+            tracer.info(f"[generate_overview] Rendered overview length: {len(rendered)}")
         except Exception as e:
             logger.error(f"Failed to render overview template for {memory_type}: {e}")
             return
@@ -658,6 +655,6 @@ class MemoryUpdater:
         overview_path = f"{directory.rstrip('/')}/.overview.md"
         try:
             await viking_fs.write_file(overview_path, rendered, ctx=ctx)
-            logger.info(f"[generate_overview] Generated overview: {overview_path}")
+            tracer.info(f"[generate_overview] Generated overview: {overview_path}")
         except Exception as e:
             logger.error(f"Failed to write overview {overview_path}: {e}")
