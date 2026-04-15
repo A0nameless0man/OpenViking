@@ -353,7 +353,7 @@ class MemoryUpdater:
             # Generate overview for each unique directory
             for directory, memory_type in dir_to_memory_type.items():
                 logger.info(f"[apply_operations] Generating overview for {memory_type} at {directory}")
-                await self.generate_overview(memory_type, directory, ctx)
+                await self.generate_overview(memory_type, directory, ctx, extract_context)
 
         return result
 
@@ -556,6 +556,7 @@ class MemoryUpdater:
         memory_type: str,
         directory: str,
         ctx: RequestContext,
+        extract_context: Any = None,
     ) -> None:
         """
         Generate .overview.md file for a directory based on overview_template.
@@ -634,6 +635,7 @@ class MemoryUpdater:
             rendered = template.render(
                 memory_type=memory_type,
                 items=items,
+                extract_context=extract_context,
             )
             logger.info(f"[generate_overview] Rendered overview length: {len(rendered)}")
         except Exception as e:
