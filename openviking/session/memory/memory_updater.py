@@ -327,12 +327,12 @@ class MemoryUpdater:
         tracer.info(f"Memory operations applied: {result.summary()}")
 
         # Generate overview files for directories that have modified files
-        # Get all modified file URIs
-        modified_uris = result.written_uris + result.edited_uris
-        if modified_uris:
+        # Include deleted_uris to handle cleanup when files are removed
+        all_modified_uris = result.written_uris + result.edited_uris + result.deleted_uris
+        if all_modified_uris:
             # Collect unique directories with their memory types
             dir_to_memory_type = {}
-            for uri in modified_uris:
+            for uri in all_modified_uris:
                 # Extract directory path (remove the filename)
                 if "/" in uri:
                     dir_path = "/".join(uri.split("/")[:-1])
@@ -600,8 +600,20 @@ class MemoryUpdater:
             logger.warning(f"Failed to list files in {directory}: {e}")
             return
 
+        # If no memory files, delete the .overview.md and the directory if empty
         if not md_files:
-            logger.debug(f"No memory files in {directory}, skipping overview generation")
+            overview_path = f"{directory.rstrip('/')}/.overview.md"
+            try:
+                await viking_fs.delete_file(overview_path, ctx=ctx)
+                logger.info(f"[generate_overview] Removed orphaned overview: {overview_path}")
+            except Exception:
+                pass
+            # Try to delete empty directory
+            try:
+                await viking_fs.delete_file(directory, ctx=ctx)
+                logger.info(f"[generate_overview] Removed empty directory: {directory}")
+            except Exception:
+                pass
             return
 
         # Parse each file and collect items
