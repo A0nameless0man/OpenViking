@@ -1590,6 +1590,7 @@ function formatMemoryBlock(
 
   if (usedChars === 0) return ""
   lines.push("</relevant-memories>")
+  lines.push("Use the `memread` tool with a memory's URI and level=\"overview\" or level=\"read\" to retrieve more details.")
   return lines.join("\n")
 }
 
