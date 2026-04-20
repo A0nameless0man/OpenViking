@@ -160,16 +160,30 @@ class ContentWriteCoordinator:
         if parsed.scope not in {"resources", "user", "agent"}:
             raise InvalidArgumentError(f"write is not supported for scope: {parsed.scope}")
 
+    def _is_not_found(self, exc: Exception) -> bool:
+        """Check if an exception indicates a not-found error (OpenViking or AGFS)."""
+        if isinstance(exc, NotFoundError):
+            return True
+        # AGFS raises its own AGFSNotFoundError which is unrelated to our NotFoundError
+        try:
+            from openviking.pyagfs import AGFSNotFoundError
+
+            return isinstance(exc, AGFSNotFoundError)
+        except ImportError:
+            return False
+
     async def _safe_stat(
         self, uri: str, *, ctx: RequestContext, allow_not_found: bool = False
     ) -> Dict[str, Any]:
         try:
             return await self._viking_fs.stat(uri, ctx=ctx)
         except Exception as exc:
-            if isinstance(exc, NotFoundError):
+            if self._is_not_found(exc):
                 if allow_not_found:
                     return {"not_found": True}
-                raise
+                if isinstance(exc, NotFoundError):
+                    raise
+                raise NotFoundError(uri, "file") from exc
             raise NotFoundError(uri, "file") from exc
 
     def _validate_create_extension(self, uri: str) -> None:
