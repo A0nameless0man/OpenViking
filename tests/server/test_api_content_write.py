@@ -132,6 +132,26 @@ async def test_api_create_mode_new_file_success(client):
     assert body["result"]["mode"] == "create"
 
 
+async def test_api_create_mode_write_then_read(client):
+    """Create a new file then read it back — verify content roundtrips."""
+    uri = "viking://user/default/memories/create_readback_test.md"
+
+    write_resp = await client.post(
+        "/api/v1/content/write",
+        json={
+            "uri": uri,
+            "content": "# Hello\n\nWrite-then-read verification.",
+            "mode": "create",
+            "wait": True,
+        },
+    )
+    assert write_resp.status_code == 200
+
+    read_resp = await client.get("/api/v1/content/read", params={"uri": uri})
+    assert read_resp.status_code == 200
+    assert read_resp.json()["result"] == "# Hello\n\nWrite-then-read verification."
+
+
 async def test_api_create_mode_existing_file_409(client_with_resource):
     """Test create mode on an existing file should return 409."""
     client, uri = client_with_resource
