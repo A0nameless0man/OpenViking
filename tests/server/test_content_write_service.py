@@ -316,15 +316,11 @@ async def test_create_mode_new_file_success(monkeypatch):
     file_uri = "viking://user/default/memories/new_file.md"
     root_uri = "viking://user/default/memories"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=False
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=False)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
     lock_manager = _FakeLockManager()
 
-    monkeypatch.setattr(
-        "openviking.storage.content_write.get_lock_manager", lambda: lock_manager
-    )
+    monkeypatch.setattr("openviking.storage.content_write.get_lock_manager", lambda: lock_manager)
 
     async def _fake_write_in_place(uri, content, *, mode, ctx):
         del uri, mode, ctx
@@ -343,12 +339,8 @@ async def test_create_mode_new_file_success(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-    monkeypatch.setattr(
-        coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-    )
-    monkeypatch.setattr(
-        coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-    )
+    monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+    monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     result = await coordinator.write(
@@ -363,9 +355,7 @@ async def test_create_mode_existing_file_raises_409(monkeypatch):
     file_uri = "viking://user/default/memories/existing.md"
     root_uri = "viking://user/default/memories"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=True
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=True)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
 
     async def _fake_write_in_place(uri, content, *, mode, ctx):
@@ -385,18 +375,12 @@ async def test_create_mode_existing_file_raises_409(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-    monkeypatch.setattr(
-        coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-    )
-    monkeypatch.setattr(
-        coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-    )
+    monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+    monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     with pytest.raises(AlreadyExistsError):
-        await coordinator.write(
-            uri=file_uri, content="content", mode="create", ctx=ctx, wait=True
-        )
+        await coordinator.write(uri=file_uri, content="content", mode="create", ctx=ctx, wait=True)
 
 
 @pytest.mark.asyncio
@@ -404,9 +388,7 @@ async def test_create_mode_invalid_extension_raises_400(monkeypatch):
     file_uri = "viking://user/default/memories/test.exe"
     root_uri = "viking://user/default/memories"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=False
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=False)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
 
     async def _fake_write_in_place(uri, content, *, mode, ctx):
@@ -426,18 +408,12 @@ async def test_create_mode_invalid_extension_raises_400(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-    monkeypatch.setattr(
-        coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-    )
-    monkeypatch.setattr(
-        coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-    )
+    monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+    monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     with pytest.raises(InvalidArgumentError):
-        await coordinator.write(
-            uri=file_uri, content="content", mode="create", ctx=ctx, wait=True
-        )
+        await coordinator.write(uri=file_uri, content="content", mode="create", ctx=ctx, wait=True)
 
 
 @pytest.mark.asyncio
@@ -445,15 +421,11 @@ async def test_create_mode_parent_dirs_auto_created(monkeypatch):
     file_uri = "viking://user/default/memories/new_subdir/test.md"
     root_uri = "viking://user/default/memories"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=False
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=False)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
     lock_manager = _FakeLockManager()
 
-    monkeypatch.setattr(
-        "openviking.storage.content_write.get_lock_manager", lambda: lock_manager
-    )
+    monkeypatch.setattr("openviking.storage.content_write.get_lock_manager", lambda: lock_manager)
 
     async def _fake_write_in_place(uri, content, *, mode, ctx):
         del uri, mode, ctx
@@ -472,12 +444,8 @@ async def test_create_mode_parent_dirs_auto_created(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-    monkeypatch.setattr(
-        coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-    )
-    monkeypatch.setattr(
-        coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-    )
+    monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+    monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     await coordinator.write(
@@ -497,14 +465,14 @@ async def test_create_mode_valid_extensions_pass(monkeypatch):
     for ext in valid_extensions:
         file_uri = f"viking://user/default/memories/test{ext}"
         root_uri = "viking://user/default/memories"
-        viking_fs = _FakeVikingFSForCreate(
-            file_uri=file_uri, root_uri=root_uri, file_exists=False
-        )
+        viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=False)
         coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
         lock_manager = _FakeLockManager()
 
+        _captured_lock = lock_manager
+
         monkeypatch.setattr(
-            "openviking.storage.content_write.get_lock_manager", lambda: lock_manager
+            "openviking.storage.content_write.get_lock_manager", lambda _l=_captured_lock: _l
         )
 
         async def _fake_write_in_place(uri, content, *, mode, ctx):
@@ -524,12 +492,8 @@ async def test_create_mode_valid_extensions_pass(monkeypatch):
             return None
 
         monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-        monkeypatch.setattr(
-            coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-        )
-        monkeypatch.setattr(
-            coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-        )
+        monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+        monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
         monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
         result = await coordinator.write(
@@ -543,15 +507,11 @@ async def test_create_mode_memory_scope(monkeypatch):
     file_uri = "viking://user/default/memories/test.md"
     root_uri = "viking://user/default/memories"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=False
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=False)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
     lock_manager = _FakeLockManager()
 
-    monkeypatch.setattr(
-        "openviking.storage.content_write.get_lock_manager", lambda: lock_manager
-    )
+    monkeypatch.setattr("openviking.storage.content_write.get_lock_manager", lambda: lock_manager)
 
     async def _fake_write_in_place(uri, content, *, mode, ctx):
         del uri, mode, ctx
@@ -572,12 +532,8 @@ async def test_create_mode_memory_scope(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-    monkeypatch.setattr(
-        coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-    )
-    monkeypatch.setattr(
-        coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-    )
+    monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+    monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     result = await coordinator.write(
@@ -591,15 +547,11 @@ async def test_create_mode_resource_scope(monkeypatch):
     file_uri = "viking://resources/demo/test.md"
     root_uri = "viking://resources/demo"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=False
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=False)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
     lock_manager = _FakeLockManager()
 
-    monkeypatch.setattr(
-        "openviking.storage.content_write.get_lock_manager", lambda: lock_manager
-    )
+    monkeypatch.setattr("openviking.storage.content_write.get_lock_manager", lambda: lock_manager)
 
     async def _fake_prepare_temp_write(**kwargs):
         del kwargs
@@ -616,9 +568,7 @@ async def test_create_mode_resource_scope(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_prepare_temp_write", _fake_prepare_temp_write)
-    monkeypatch.setattr(
-        coordinator, "_enqueue_semantic_refresh", _fake_enqueue_semantic_refresh
-    )
+    monkeypatch.setattr(coordinator, "_enqueue_semantic_refresh", _fake_enqueue_semantic_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     result = await coordinator.write(
@@ -632,15 +582,11 @@ async def test_create_mode_regression_replace_unchanged(monkeypatch):
     file_uri = "viking://user/default/memories/theme.md"
     root_uri = "viking://user/default/memories"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=True
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=True)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
     lock_manager = _FakeLockManager()
 
-    monkeypatch.setattr(
-        "openviking.storage.content_write.get_lock_manager", lambda: lock_manager
-    )
+    monkeypatch.setattr("openviking.storage.content_write.get_lock_manager", lambda: lock_manager)
 
     async def _fake_write_in_place(uri, content, *, mode, ctx):
         # Verify mode="replace" still works
@@ -661,12 +607,8 @@ async def test_create_mode_regression_replace_unchanged(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-    monkeypatch.setattr(
-        coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-    )
-    monkeypatch.setattr(
-        coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-    )
+    monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+    monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     result = await coordinator.write(
@@ -681,15 +623,11 @@ async def test_create_mode_regression_append_unchanged(monkeypatch):
     file_uri = "viking://user/default/memories/theme.md"
     root_uri = "viking://user/default/memories"
     ctx = RequestContext(user=UserIdentifier.the_default_user(), role=Role.USER)
-    viking_fs = _FakeVikingFSForCreate(
-        file_uri=file_uri, root_uri=root_uri, file_exists=True
-    )
+    viking_fs = _FakeVikingFSForCreate(file_uri=file_uri, root_uri=root_uri, file_exists=True)
     coordinator = ContentWriteCoordinator(viking_fs=viking_fs)
     lock_manager = _FakeLockManager()
 
-    monkeypatch.setattr(
-        "openviking.storage.content_write.get_lock_manager", lambda: lock_manager
-    )
+    monkeypatch.setattr("openviking.storage.content_write.get_lock_manager", lambda: lock_manager)
 
     async def _fake_write_in_place(uri, content, *, mode, ctx):
         # Verify mode="append" still works
@@ -710,12 +648,8 @@ async def test_create_mode_regression_append_unchanged(monkeypatch):
         return None
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
-    monkeypatch.setattr(
-        coordinator, "_vectorize_single_file", _fake_vectorize_single_file
-    )
-    monkeypatch.setattr(
-        coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh
-    )
+    monkeypatch.setattr(coordinator, "_vectorize_single_file", _fake_vectorize_single_file)
+    monkeypatch.setattr(coordinator, "_enqueue_memory_refresh", _fake_enqueue_memory_refresh)
     monkeypatch.setattr(coordinator, "_wait_for_queues", _fake_wait_for_queues)
 
     result = await coordinator.write(

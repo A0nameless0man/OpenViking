@@ -189,9 +189,7 @@ class ContentWriteCoordinator:
     def _validate_create_extension(self, uri: str) -> None:
         _, ext = os.path.splitext(uri)
         if ext.lower() not in _CREATE_ALLOWED_EXTENSIONS:
-            raise InvalidArgumentError(
-                f"create mode does not allow extension '{ext}': {uri}"
-            )
+            raise InvalidArgumentError(f"create mode does not allow extension '{ext}': {uri}")
 
     async def _create_and_write(
         self,
@@ -235,9 +233,7 @@ class ContentWriteCoordinator:
         acquired = await lock_manager.acquire_subtree(handle, lock_path)
         if not acquired:
             await lock_manager.release(handle)
-            raise InvalidArgumentError(
-                f"resource is busy and cannot be written now: {uri}"
-            )
+            raise InvalidArgumentError(f"resource is busy and cannot be written now: {uri}")
 
         temp_root_uri = ""
         lock_transferred = False

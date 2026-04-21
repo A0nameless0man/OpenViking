@@ -210,8 +210,6 @@ async def test_api_create_mode_regression_replace_unchanged(client_with_resource
     """Test replace mode still works (regression test)."""
     client, uri = client_with_resource
     file_uri = await _first_file_uri(client, uri)
-    original = (await client.get("/api/v1/content/read", params={"uri": file_uri})).json()["result"]
-
     resp = await client.post(
         "/api/v1/content/write",
         json={
