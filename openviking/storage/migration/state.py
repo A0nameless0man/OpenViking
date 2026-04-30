@@ -41,6 +41,13 @@ class MigrationPhase(str, Enum):
     completed = "completed"
 
 
+class ActiveSide(str, Enum):
+    """Which side of the dual-write adapter is the active read side."""
+
+    SOURCE = "source"
+    TARGET = "target"
+
+
 # =============================================================================
 # ReindexProgress
 # =============================================================================
@@ -82,7 +89,7 @@ class MigrationState:
     phase: MigrationPhase
     source_collection: str
     target_collection: str
-    active_side: str  # "source" or "target"
+    active_side: ActiveSide  # "source" or "target"
     dual_write_enabled: bool
     source_embedder_name: str
     target_embedder_name: str
@@ -208,14 +215,28 @@ class MigrationStateFile:
         """
         return self._read_raw()
 
+    def _read_write_atomic(self, update_fn) -> None:
+        """Read current data, apply *update_fn*, and write atomically.
+
+        The FileLock is held for the entire read-modify-write cycle,
+        preventing lost updates from concurrent callers.
+        """
+        with FileLock(str(self.lock_file)):
+            data = self._read_raw()
+            update_fn(data)
+            tmp = self.file_path.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            tmp.replace(self.file_path)
+
     def update_current_active(self, name: str) -> None:
         """Atomically update current_active, preserving other fields."""
-        data = self._read_raw()
-        data["current_active"] = name
-        self._write_atomic(data)
+        def _update(data: Dict[str, Any]) -> None:
+            data["current_active"] = name
+        self._read_write_atomic(_update)
 
     def append_history(self, entry: Dict[str, Any]) -> None:
         """Atomically append a migration history record."""
-        data = self._read_raw()
-        data["history"].append(entry)
-        self._write_atomic(data)
+        def _update(data: Dict[str, Any]) -> None:
+            data["history"].append(entry)
+        self._read_write_atomic(_update)

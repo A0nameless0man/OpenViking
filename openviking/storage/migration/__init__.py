@@ -6,10 +6,8 @@ This package provides tools to migrate embedding data between different
 model providers, dimensions, and storage backends.
 """
 
-from .blue_green_adapter import DualWriteAdapter
-from .controller import InvalidTransitionError, MigrationController
-from .reindex_engine import ReindexEngine
 from .state import (
+    ActiveSide,
     MigrationPhase,
     MigrationState,
     MigrationStateFile,
@@ -17,18 +15,11 @@ from .state import (
     ReindexProgress,
 )
 
-# rollback functions are imported lazily inside controller.py to avoid
-# import-ordering issues during test collection.
-# See: from .rollback import ...
-
 __all__ = [
-    "DualWriteAdapter",
-    "InvalidTransitionError",
-    "MigrationController",
+    "ActiveSide",
     "MigrationPhase",
     "MigrationState",
     "MigrationStateFile",
     "MigrationStateManager",
-    "ReindexEngine",
     "ReindexProgress",
 ]

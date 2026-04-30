@@ -162,6 +162,26 @@ class OpenVikingConfig(BaseModel):
             )
         return self
 
+    def get_target_embedder(self, target_name: str) -> "Embedder":
+        """Create a target embedder from a named embedding configuration.
+
+        Looks up *target_name* in ``self.embeddings`` and returns a fully
+        constructed embedder instance for that named config.  Used by the
+        migration controller and crash-recovery path to create the embedder
+        for the *target* side of a migration.
+
+        Args:
+            target_name: Key into ``self.embeddings`` (e.g. ``"v2"``).
+
+        Returns:
+            Embedder instance (Dense, Sparse, Hybrid, or Composite).
+
+        Raises:
+            KeyError: If *target_name* is not found in ``self.embeddings``.
+        """
+        target_cfg = self.embeddings[target_name]
+        return target_cfg.get_embedder()
+
     @model_validator(mode="after")
     def _resolve_embedding_from_embeddings(self) -> "OpenVikingConfig":
         """Resolve active embedding from the embeddings map.
@@ -207,17 +227,10 @@ class OpenVikingConfig(BaseModel):
                     "Add 'default' to embeddings pointing to the current embedding config."
                 )
             current_active = "default"
-            # Auto-create state file
-            config_dir.mkdir(parents=True, exist_ok=True)
-            initial_state = {
-                "version": 1,
-                "current_active": current_active,
-                "history": [],
-            }
-            state_file_path.write_text(
-                json.dumps(initial_state, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            # Atomic write via MigrationStateFile to prevent corruption
+            from openviking.storage.migration.state import MigrationStateFile
+            migration_file = MigrationStateFile(str(config_dir))
+            migration_file.create_initial(current_active)
 
         # Validate current_active exists in embeddings
         if current_active not in self.embeddings:
