@@ -9,6 +9,7 @@ from openviking.server.routers.debug import router as debug_router
 from openviking.server.routers.filesystem import router as filesystem_router
 from openviking.server.routers.maintenance import router as maintenance_router
 from openviking.server.routers.metrics import router as metrics_router
+from openviking.server.routers.migration import router as migration_router
 from openviking.server.routers.observer import router as observer_router
 from openviking.server.routers.pack import router as pack_router
 from openviking.server.routers.privacy_configs import router as privacy_configs_router
@@ -40,4 +41,5 @@ __all__ = [
     "tasks_router",
     "webdav_router",
     "maintenance_router",
+    "migration_router",
 ]
